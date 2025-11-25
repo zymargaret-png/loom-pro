@@ -3,227 +3,372 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Loom Pro 全功能版</title>
+  <title>Loom Pro Ultimate</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body {
-      background: #f8fafc;
+      background: #0f172a;
+      color: white;
       display: flex;
       flex-direction: column;
       align-items: center;
       padding: 20px;
       min-height: 100vh;
-      color: #1e293b;
+      overflow: hidden;
     }
     h1 {
-      margin: 20px 0;
-      font-size: 24px;
+      margin: 15px 0;
+      font-size: 20px;
       text-align: center;
     }
-    .section {
-      margin: 15px 0;
-      width: 100%;
-      max-width: 600px;
-    }
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-    select, button {
-      width: 100%;
-      padding: 10px;
-      margin: 6px 0;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-    .btn-group {
+    .controls {
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      justify-content: center;
+      margin: 15px 0;
+      max-width: 800px;
     }
-    .btn-group button {
-      flex: 1;
-      min-width: 120px;
+    select, button {
+      padding: 8px 12px;
+      font-size: 14px;
+      border: none;
+      border-radius: 6px;
+      background: #1e293b;
+      color: white;
+      cursor: pointer;
     }
-    #recordBtn { background: #ef4444; color: white; }
-    #stopBtn { background: #94a3b8; color: white; display: none; }
-    #preview, #pipVideo {
+    button.active { background: #334155; }
+    #recordBtn { background: #ef4444; }
+    #stopBtn { background: #64748b; display: none; }
+    .status {
+      margin: 10px 0;
+      color: #94a3b8;
+      font-size: 13px;
+      text-align: center;
+    }
+    #previewContainer {
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+      margin: 10px 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    #preview {
+      width: 100%;
+      display: block;
+    }
+    /* 裁切区域（安全框） */
+    #cropOverlay {
+      position: absolute;
+      border: 2px dashed rgba(255,255,255,0.5);
+      background: rgba(0,0,0,0.3);
+      cursor: move;
       display: none;
-      margin-top: 15px;
-      border-radius: 10px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    /* 圆形头像 */
+    #pipContainer {
+      position: absolute;
+      z-index: 10;
+      cursor: move;
+      user-select: none;
+      display: none;
     }
     #pipVideo {
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+      display: block;
+    }
+    #sizeControls {
       position: absolute;
-      width: 120px;
-      height: auto;
-      bottom: 20px;
-      right: 20px;
-      border: 2px solid white;
-      border-radius: 8px;
-      z-index: 10;
+      bottom: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 4px;
     }
-    .status {
-      margin-top: 10px;
-      color: #64748b;
-      text-align: center;
-      min-height: 20px;
+    #sizeControls button {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      font-size: 12px;
+      border-radius: 50%;
     }
-    canvas {
-      display: none;
-    }
+    canvas { display: none; }
   </style>
 </head>
 <body>
-  <h1>🎥 Loom Pro 全功能版（录屏+摄像头+美颜）</h1>
+  <h1>🎬 Loom Pro Ultimate（自动电影感 + 虚拟裁切）</h1>
 
-  <div class="section">
-    <label for="aspect">📹 视频比例</label>
+  <div class="controls">
     <select id="aspect">
-      <option value="16:9">16:9（宽屏）</option>
-      <option value="9:16">9:16（抖音竖屏）</option>
-      <option value="3:4">3:4（小红书）</option>
-      <option value="1:1">1:1（方形）</option>
+      <option value="16:9">16:9 (宽屏)</option>
+      <option value="9:16">9:16 (抖音)</option>
+      <option value="3:4">3:4 (小红书)</option>
+      <option value="1:1">1:1 (方形)</option>
     </select>
+    
+    <button id="beautyToggle">💡 美颜: 关</button>
+    <button id="avatarToggle">👤 头像: 开</button>
+    <button id="resetPosition">🔄 回中</button>
   </div>
 
-  <div class="section">
-    <label>🎤 音频与摄像头</label>
-    <div class="btn-group">
-      <button id="startBtn">▶️ 开始录制</button>
-      <button id="stopBtn">⏹ 停止并下载</button>
+  <div class="controls">
+    <button id="recordBtn">🔴 录制MP4</button>
+    <button id="stopBtn">⏹ 停止</button>
+  </div>
+
+  <div class="status" id="status">点击【录制MP4】启动系统...</div>
+
+  <div id="previewContainer">
+    <video id="preview" autoplay muted playsinline></video>
+    <div id="cropOverlay"></div>
+  </div>
+
+  <!-- 圆形可拖拽头像 -->
+  <div id="pipContainer">
+    <video id="pipVideo" autoplay muted playsinline></video>
+    <div id="sizeControls">
+      <button id="smallSize">-</button>
+      <button id="largeSize">+</button>
     </div>
   </div>
 
-  <div class="status" id="status">点击“开始录制”以共享屏幕和麦克风</div>
-
-  <video id="preview" autoplay muted playsinline></video>
-  <video id="pipVideo" autoplay muted playsinline></video>
   <canvas id="filterCanvas"></canvas>
 
   <script>
-    const startBtn = document.getElementById('startBtn');
+    // 元素引用
+    const recordBtn = document.getElementById('recordBtn');
     const stopBtn = document.getElementById('stopBtn');
     const preview = document.getElementById('preview');
+    const cropOverlay = document.getElementById('cropOverlay');
+    const pipContainer = document.getElementById('pipContainer');
     const pipVideo = document.getElementById('pipVideo');
     const statusEl = document.getElementById('status');
     const aspectSelect = document.getElementById('aspect');
+    const beautyToggle = document.getElementById('beautyToggle');
+    const avatarToggle = document.getElementById('avatarToggle');
+    const resetBtn = document.getElementById('resetPosition');
     const canvas = document.getElementById('filterCanvas');
     const ctx = canvas.getContext('2d');
 
+    // 状态变量
     let screenStream = null;
-    let micStream = null;
     let cameraStream = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let animationFrameId = null;
+    let isBeautyOn = false;
+    let isAvatarOn = true;
+    let currentSize = 'medium';
+    const sizes = { small: 80, medium: 120, large: 160 };
+    let cropRect = { x: 0, y: 0, width: 800, height: 450 }; // 默认 16:9
 
-    // 美颜参数（可调）
-    const beautyConfig = {
-      brightness: 1.1,
-      contrast: 1.05
-    };
+    // 初始化裁切区域
+    function initCropOverlay() {
+      const container = preview.parentElement;
+      const ratio = aspectSelect.value;
+      let [w, h] = ratio.split(':').map(Number);
+      if (!w || !h) { w = 16; h = 9; }
+
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      const scale = Math.min(containerWidth / (w * 60), containerHeight / (h * 60));
+      const overlayWidth = w * 60 * scale;
+      const overlayHeight = h * 60 * scale;
+
+      cropRect = {
+        x: (containerWidth - overlayWidth) / 2,
+        y: (containerHeight - overlayHeight) / 2,
+        width: overlayWidth,
+        height: overlayHeight
+      };
+
+      cropOverlay.style.display = 'block';
+      cropOverlay.style.left = cropRect.x + 'px';
+      cropOverlay.style.top = cropRect.y + 'px';
+      cropOverlay.style.width = cropRect.width + 'px';
+      cropOverlay.style.height = cropRect.height + 'px';
+    }
 
     // 获取摄像头
     async function getCamera() {
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         pipVideo.srcObject = cameraStream;
-        pipVideo.style.display = 'block';
-        return cameraStream;
+        pipContainer.style.display = isAvatarOn ? 'block' : 'none';
+        positionPip();
       } catch (err) {
-        console.warn('摄像头不可用:', err);
-        pipVideo.style.display = 'none';
-        return null;
+        console.warn('摄像头不可用');
+        pipContainer.style.display = 'none';
       }
     }
 
-    // 绘制带美颜的混合画面（录屏 + 摄像头）
-    function drawCombinedFrame(screenVideo, camVideo) {
-      if (!screenVideo.videoWidth || !camVideo?.videoWidth) return;
+    // 定位头像（右下角）
+    function positionPip() {
+      if (!isAvatarOn) return;
+      const size = sizes[currentSize];
+      const container = document.body;
+      pipContainer.style.left = (window.innerWidth - size - 20) + 'px';
+      pipContainer.style.top = (window.innerHeight - size - 80) + 'px';
+      updatePipSize();
+    }
 
+    function updatePipSize() {
+      const size = sizes[currentSize];
+      pipContainer.style.width = size + 'px';
+      pipContainer.style.height = size + 'px';
+      pipVideo.style.width = size + 'px';
+      pipVideo.style.height = size + 'px';
+    }
+
+    // 拖拽头像
+    let isDraggingPip = false, pipOffsetX, pipOffsetY;
+    pipContainer.addEventListener('mousedown', (e) => {
+      if (['smallSize', 'largeSize'].includes(e.target.id)) return;
+      isDraggingPip = true;
+      const rect = pipContainer.getBoundingClientRect();
+      pipOffsetX = e.clientX - rect.left;
+      pipOffsetY = e.clientY - rect.top;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDraggingPip) return;
+      let x = e.clientX - pipOffsetX;
+      let y = e.clientY - pipOffsetY;
+      x = Math.max(0, Math.min(x, window.innerWidth - pipContainer.offsetWidth));
+      y = Math.max(0, Math.min(y, window.innerHeight - pipContainer.offsetHeight));
+      pipContainer.style.left = x + 'px';
+      pipContainer.style.top = y + 'px';
+    });
+
+    document.addEventListener('mouseup', () => isDraggingPip = false);
+
+    // 拖拽裁切区域
+    let isDraggingCrop = false, cropStartX, cropStartY;
+    cropOverlay.addEventListener('mousedown', (e) => {
+      isDraggingCrop = true;
+      cropStartX = e.clientX - cropRect.x;
+      cropStartY = e.clientY - cropRect.y;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDraggingCrop) return;
+      cropRect.x = e.clientX - cropStartX;
+      cropRect.y = e.clientY - cropStartY;
+      // 限制在容器内
+      const container = preview.parentElement;
+      cropRect.x = Math.max(0, Math.min(cropRect.x, container.clientWidth - cropRect.width));
+      cropRect.y = Math.max(0, Math.min(cropRect.y, container.clientHeight - cropRect.height));
+      cropOverlay.style.left = cropRect.x + 'px';
+      cropOverlay.style.top = cropRect.y + 'px';
+    });
+
+    document.addEventListener('mouseup', () => isDraggingCrop = false);
+
+    // 自动运镜效果（缓慢缩放+平移）
+    let zoomLevel = 1.0;
+    let zoomDirection = 0.0005;
+    function applyCinematicZoom(video, camVideo) {
       const ratio = aspectSelect.value;
       let [w, h] = ratio.split(':').map(Number);
       if (!w || !h) { w = 16; h = 9; }
 
-      // 设置 canvas 尺寸
-      canvas.width = w * 60; // 例如 16*60=960
-      canvas.height = h * 60; // 9*60=540
+      canvas.width = w * 60;
+      canvas.height = h * 60;
 
-      // 清空并绘制录屏画面（缩放填充）
-      ctx.filter = `brightness(${beautyConfig.brightness}) contrast(${beautyConfig.contrast})`;
-      ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+      // 更新缩放
+      zoomLevel += zoomDirection;
+      if (zoomLevel > 1.1 || zoomLevel < 1.0) zoomDirection *= -1;
 
-      // 在右下角绘制摄像头（小窗口）
-      if (camVideo && camVideo.readyState >= 2) {
-        const camSize = Math.min(canvas.width, canvas.height) * 0.25;
-        ctx.filter = 'none'; // 摄像头不加美颜（可选）
-        ctx.drawImage(camVideo, canvas.width - camSize - 10, canvas.height - camSize - 10, camSize, camSize);
+      // 计算裁剪区域（模拟运镜）
+      const srcWidth = video.videoWidth;
+      const srcHeight = video.videoHeight;
+      const zoomedWidth = srcWidth / zoomLevel;
+      const zoomedHeight = srcHeight / zoomLevel;
+      const offsetX = (srcWidth - zoomedWidth) / 2;
+      const offsetY = (srcHeight - zoomedHeight) / 2;
+
+      // 绘制背景（带美颜）
+      ctx.filter = isBeautyOn ? 'brightness(1.2) contrast(1.1)' : 'none';
+      ctx.drawImage(video, offsetX, offsetY, zoomedWidth, zoomedHeight, 0, 0, canvas.width, canvas.height);
+
+      // 绘制圆形头像
+      if (isAvatarOn && camVideo && camVideo.readyState >= 2) {
+        const size = sizes[currentSize];
+        const scale = canvas.width / window.innerWidth;
+        const camW = size * scale;
+        const camH = size * scale;
+        const rect = pipContainer.getBoundingClientRect();
+        const x = rect.left * scale;
+        const y = rect.top * scale;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x + camW/2, y + camH/2, camW/2, 0, Math.PI*2);
+        ctx.clip();
+        ctx.filter = 'none';
+        ctx.drawImage(camVideo, x, y, camW, camH);
+        ctx.restore();
       }
-
-      ctx.filter = 'none';
     }
 
     // 开始录制
     async function startRecording() {
       try {
-        statusEl.textContent = '请求屏幕共享...';
-        startBtn.disabled = true;
+        statusEl.textContent = '正在初始化...';
+        recordBtn.disabled = true;
 
-        // 获取屏幕 + 麦克风
         screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: "motion" },
-          audio: true // 启用麦克风
+          audio: true
         });
 
-        micStream = screenStream; // 音频已包含在 screenStream 中（部分浏览器）
+        if (isAvatarOn) await getCamera();
 
-        // 获取摄像头
-        await getCamera();
-
-        // 显示预览
         preview.srcObject = screenStream;
         preview.style.display = 'block';
+        initCropOverlay();
 
-        // 创建离屏 canvas 流（用于录制混合画面）
-        const captureStream = canvas.captureStream(30); // 30fps
+        // 尝试 MP4，否则用 WebM
+        const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264') 
+          ? 'video/mp4;codecs=h264' 
+          : 'video/webm;codecs=vp9';
 
-        // 开始录制 canvas 流
-        mediaRecorder = new MediaRecorder(captureStream, { mimeType: 'video/webm;codecs=vp9' });
+        const captureStream = canvas.captureStream(30);
+        mediaRecorder = new MediaRecorder(captureStream, { mimeType });
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const blob = new Blob(recordedChunks, { type: mimeType });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `LoomPro_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.webm`;
+          a.download = `LoomPro_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${ext}`;
           a.click();
           URL.revokeObjectURL(url);
           cleanup();
-          statusEl.textContent = '✅ 视频已下载！';
+          statusEl.textContent = `✅ 视频已保存为 ${ext.toUpperCase()}！`;
         };
-
         mediaRecorder.start();
 
-        // 开始绘制混合画面
         function animate() {
-          drawCombinedFrame(preview, pipVideo);
+          applyCinematicZoom(preview, pipVideo);
           animationFrameId = requestAnimationFrame(animate);
         }
         animate();
 
-        // 切换按钮
-        startBtn.style.display = 'none';
+        recordBtn.style.display = 'none';
         stopBtn.style.display = 'inline-block';
-        statusEl.textContent = '🔴 正在录制... 点击“停止”保存视频';
+        statusEl.textContent = '🎬 自动运镜录制中... 点击【停止】保存';
 
       } catch (err) {
-        console.error('启动失败:', err);
-        statusEl.textContent = `❌ 错误: ${err.message || '用户取消或权限被拒'}`;
-        startBtn.disabled = false;
+        console.error(err);
+        statusEl.textContent = `❌ ${err.message || '权限被拒'}`;
+        recordBtn.disabled = false;
       }
     }
 
@@ -235,20 +380,40 @@
     }
 
     function cleanup() {
-      [screenStream, micStream, cameraStream].forEach(stream => {
-        if (stream) stream.getTracks().forEach(track => track.stop());
-      });
+      [screenStream, cameraStream].forEach(s => s?.getTracks().forEach(t => t.stop()));
       preview.srcObject = null;
       pipVideo.srcObject = null;
       preview.style.display = 'none';
-      pipVideo.style.display = 'none';
-      startBtn.style.display = 'inline-block';
+      cropOverlay.style.display = 'none';
+      pipContainer.style.display = 'none';
+      recordBtn.style.display = 'inline-block';
       stopBtn.style.display = 'none';
-      startBtn.disabled = false;
+      recordBtn.disabled = false;
     }
 
-    startBtn.addEventListener('click', startRecording);
+    // 事件绑定
+    recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
+    aspectSelect.addEventListener('change', initCropOverlay);
+    beautyToggle.addEventListener('click', () => {
+      isBeautyOn = !isBeautyOn;
+      beautyToggle.textContent = `💡 美颜: ${isBeautyOn ? '开' : '关'}`;
+    });
+    avatarToggle.addEventListener('click', () => {
+      isAvatarOn = !isAvatarOn;
+      avatarToggle.textContent = `👤 头像: ${isAvatarOn ? '开' : '关'}`;
+      pipContainer.style.display = isAvatarOn ? 'block' : 'none';
+    });
+    resetBtn.addEventListener('click', positionPip);
+    document.getElementById('smallSize').addEventListener('click', () => {
+      currentSize = 'small'; updatePipSize();
+    });
+    document.getElementById('largeSize').addEventListener('click', () => {
+      currentSize = 'large'; updatePipSize();
+    });
+
+    // 初始化
+    positionPip();
   </script>
 </body>
 </html>
