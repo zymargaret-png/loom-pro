@@ -60,7 +60,6 @@
       width: 100%;
       display: block;
     }
-    /* 裁切区域（安全框） */
     #cropOverlay {
       position: absolute;
       border: 2px dashed rgba(255,255,255,0.5);
@@ -68,7 +67,6 @@
       cursor: move;
       display: none;
     }
-    /* 圆形头像 */
     #pipContainer {
       position: absolute;
       z-index: 10;
@@ -77,9 +75,14 @@
       display: none;
     }
     #pipVideo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
       border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
       display: block;
+      /* 初始无滤镜，由 JS 控制 */
+      filter: none;
     }
     #sizeControls {
       position: absolute;
@@ -100,7 +103,7 @@
   </style>
 </head>
 <body>
-  <h1>🎬 Loom Pro Ultimate（自动电影感 + 虚拟裁切）</h1>
+  <h1>🎬 Loom Pro Ultimate（美颜仅用于头像）</h1>
 
   <div class="controls">
     <select id="aspect">
@@ -110,7 +113,7 @@
       <option value="1:1">1:1 (方形)</option>
     </select>
     
-    <button id="beautyToggle">💡 美颜: 关</button>
+    <button id="beautyToggle">💡 美颜: 开</button>
     <button id="avatarToggle">👤 头像: 开</button>
     <button id="resetPosition">🔄 回中</button>
   </div>
@@ -127,7 +130,6 @@
     <div id="cropOverlay"></div>
   </div>
 
-  <!-- 圆形可拖拽头像 -->
   <div id="pipContainer">
     <video id="pipVideo" autoplay muted playsinline></video>
     <div id="sizeControls">
@@ -139,7 +141,6 @@
   <canvas id="filterCanvas"></canvas>
 
   <script>
-    // 元素引用
     const recordBtn = document.getElementById('recordBtn');
     const stopBtn = document.getElementById('stopBtn');
     const preview = document.getElementById('preview');
@@ -154,19 +155,24 @@
     const canvas = document.getElementById('filterCanvas');
     const ctx = canvas.getContext('2d');
 
-    // 状态变量
     let screenStream = null;
     let cameraStream = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let animationFrameId = null;
-    let isBeautyOn = false;
+    let isBeautyOn = true;
     let isAvatarOn = true;
     let currentSize = 'medium';
     const sizes = { small: 80, medium: 120, large: 160 };
-    let cropRect = { x: 0, y: 0, width: 800, height: 450 }; // 默认 16:9
+    let cropRect = { x: 0, y: 0, width: 800, height: 450 };
 
-    // 初始化裁切区域
+    // 更新头像滤镜
+    function updatePipFilter() {
+      pipVideo.style.filter = isBeautyOn 
+        ? 'brightness(1.35) contrast(1.25) saturate(1.15)'
+        : 'none';
+    }
+
     function initCropOverlay() {
       const container = preview.parentElement;
       const ratio = aspectSelect.value;
@@ -193,24 +199,29 @@
       cropOverlay.style.height = cropRect.height + 'px';
     }
 
-    // 获取摄像头
     async function getCamera() {
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user'
+          },
+          audio: false
+        });
         pipVideo.srcObject = cameraStream;
         pipContainer.style.display = isAvatarOn ? 'block' : 'none';
+        updatePipFilter(); // 初始化滤镜
         positionPip();
       } catch (err) {
-        console.warn('摄像头不可用');
+        console.warn('摄像头不可用:', err);
         pipContainer.style.display = 'none';
       }
     }
 
-    // 定位头像（右下角）
     function positionPip() {
       if (!isAvatarOn) return;
       const size = sizes[currentSize];
-      const container = document.body;
       pipContainer.style.left = (window.innerWidth - size - 20) + 'px';
       pipContainer.style.top = (window.innerHeight - size - 80) + 'px';
       updatePipSize();
@@ -220,11 +231,8 @@
       const size = sizes[currentSize];
       pipContainer.style.width = size + 'px';
       pipContainer.style.height = size + 'px';
-      pipVideo.style.width = size + 'px';
-      pipVideo.style.height = size + 'px';
     }
 
-    // 拖拽头像
     let isDraggingPip = false, pipOffsetX, pipOffsetY;
     pipContainer.addEventListener('mousedown', (e) => {
       if (['smallSize', 'largeSize'].includes(e.target.id)) return;
@@ -246,7 +254,6 @@
 
     document.addEventListener('mouseup', () => isDraggingPip = false);
 
-    // 拖拽裁切区域
     let isDraggingCrop = false, cropStartX, cropStartY;
     cropOverlay.addEventListener('mousedown', (e) => {
       isDraggingCrop = true;
@@ -258,7 +265,6 @@
       if (!isDraggingCrop) return;
       cropRect.x = e.clientX - cropStartX;
       cropRect.y = e.clientY - cropStartY;
-      // 限制在容器内
       const container = preview.parentElement;
       cropRect.x = Math.max(0, Math.min(cropRect.x, container.clientWidth - cropRect.width));
       cropRect.y = Math.max(0, Math.min(cropRect.y, container.clientHeight - cropRect.height));
@@ -268,7 +274,6 @@
 
     document.addEventListener('mouseup', () => isDraggingCrop = false);
 
-    // 自动运镜效果（缓慢缩放+平移）
     let zoomLevel = 1.0;
     let zoomDirection = 0.0005;
     function applyCinematicZoom(video, camVideo) {
@@ -279,11 +284,9 @@
       canvas.width = w * 60;
       canvas.height = h * 60;
 
-      // 更新缩放
       zoomLevel += zoomDirection;
       if (zoomLevel > 1.1 || zoomLevel < 1.0) zoomDirection *= -1;
 
-      // 计算裁剪区域（模拟运镜）
       const srcWidth = video.videoWidth;
       const srcHeight = video.videoHeight;
       const zoomedWidth = srcWidth / zoomLevel;
@@ -291,11 +294,11 @@
       const offsetX = (srcWidth - zoomedWidth) / 2;
       const offsetY = (srcHeight - zoomedHeight) / 2;
 
-      // 绘制背景（带美颜）
-      ctx.filter = isBeautyOn ? 'brightness(1.2) contrast(1.1)' : 'none';
+      // ✅ 主画面：永远无美颜！
+      ctx.filter = 'none';
       ctx.drawImage(video, offsetX, offsetY, zoomedWidth, zoomedHeight, 0, 0, canvas.width, canvas.height);
 
-      // 绘制圆形头像
+      // 绘制头像（圆形裁剪）
       if (isAvatarOn && camVideo && camVideo.readyState >= 2) {
         const size = sizes[currentSize];
         const scale = canvas.width / window.innerWidth;
@@ -309,16 +312,15 @@
         ctx.beginPath();
         ctx.arc(x + camW/2, y + camH/2, camW/2, 0, Math.PI*2);
         ctx.clip();
-        ctx.filter = 'none';
+        ctx.filter = 'none'; // 滤镜已在 CSS 中处理
         ctx.drawImage(camVideo, x, y, camW, camH);
         ctx.restore();
       }
     }
 
-    // 开始录制
     async function startRecording() {
       try {
-        statusEl.textContent = '正在初始化...';
+        statusEl.textContent = '正在请求屏幕共享...';
         recordBtn.disabled = true;
 
         screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -332,7 +334,6 @@
         preview.style.display = 'block';
         initCropOverlay();
 
-        // 尝试 MP4，否则用 WebM
         const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264') 
           ? 'video/mp4;codecs=h264' 
           : 'video/webm;codecs=vp9';
@@ -367,7 +368,7 @@
 
       } catch (err) {
         console.error(err);
-        statusEl.textContent = `❌ ${err.message || '权限被拒'}`;
+        statusEl.textContent = `❌ ${err.message || '用户取消或权限被拒'}`;
         recordBtn.disabled = false;
       }
     }
@@ -391,13 +392,13 @@
       recordBtn.disabled = false;
     }
 
-    // 事件绑定
     recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
     aspectSelect.addEventListener('change', initCropOverlay);
     beautyToggle.addEventListener('click', () => {
       isBeautyOn = !isBeautyOn;
       beautyToggle.textContent = `💡 美颜: ${isBeautyOn ? '开' : '关'}`;
+      updatePipFilter(); // 切换时立即生效
     });
     avatarToggle.addEventListener('click', () => {
       isAvatarOn = !isAvatarOn;
@@ -413,6 +414,7 @@
     });
 
     // 初始化
+    updatePipFilter();
     positionPip();
   </script>
 </body>
