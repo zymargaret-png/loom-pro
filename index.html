@@ -55,15 +55,21 @@
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      background: #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 450px;
+      color: #64748b;
     }
+    /* 隐藏实际视频流 */
     #preview {
-      width: 100%;
-      display: block;
+      display: none;
     }
     #cropOverlay {
       position: absolute;
       border: 2px dashed rgba(255,255,255,0.5);
-      background: rgba(0,0,0,0.3);
+      background: transparent;
       cursor: move;
       display: none;
     }
@@ -102,7 +108,7 @@
   </style>
 </head>
 <body>
-  <h1>🎬 Loom Pro Ultimate（仅输出 MP4｜美颜仅用于头像）</h1>
+  <h1>🎬 Loom Pro Ultimate（仅 MP4｜无选中框｜美颜仅头像）</h1>
 
   <div class="controls">
     <select id="aspect">
@@ -124,8 +130,9 @@
 
   <div class="status" id="status">点击【录制MP4】启动系统...</div>
 
+  <!-- 预览容器仅用于显示裁切框，不显示真实视频 -->
   <div id="previewContainer">
-    <video id="preview" autoplay muted playsinline></video>
+    <div>📹 录制区域预览（实际内容不可见）</div>
     <div id="cropOverlay"></div>
   </div>
 
@@ -142,7 +149,7 @@
   <script>
     const recordBtn = document.getElementById('recordBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const preview = document.getElementById('preview');
+    const preview = document.getElementById('preview'); // 实际视频流（隐藏）
     const cropOverlay = document.getElementById('cropOverlay');
     const pipContainer = document.getElementById('pipContainer');
     const pipVideo = document.getElementById('pipVideo');
@@ -172,7 +179,7 @@
     }
 
     function initCropOverlay() {
-      const container = preview.parentElement;
+      const container = document.getElementById('previewContainer');
       const ratio = aspectSelect.value;
       let [w, h] = ratio.split(':').map(Number);
       if (!w || !h) { w = 16; h = 9; }
@@ -263,7 +270,7 @@
       if (!isDraggingCrop) return;
       cropRect.x = e.clientX - cropStartX;
       cropRect.y = e.clientY - cropStartY;
-      const container = preview.parentElement;
+      const container = document.getElementById('previewContainer');
       cropRect.x = Math.max(0, Math.min(cropRect.x, container.clientWidth - cropRect.width));
       cropRect.y = Math.max(0, Math.min(cropRect.y, container.clientHeight - cropRect.height));
       cropOverlay.style.left = cropRect.x + 'px';
@@ -292,9 +299,11 @@
       const offsetX = (srcWidth - zoomedWidth) / 2;
       const offsetY = (srcHeight - zoomedHeight) / 2;
 
+      // 主画面：无滤镜
       ctx.filter = 'none';
       ctx.drawImage(video, offsetX, offsetY, zoomedWidth, zoomedHeight, 0, 0, canvas.width, canvas.height);
 
+      // 绘制圆形头像（带美颜）
       if (isAvatarOn && camVideo && camVideo.readyState >= 2) {
         const size = sizes[currentSize];
         const scale = canvas.width / window.innerWidth;
@@ -308,24 +317,24 @@
         ctx.beginPath();
         ctx.arc(x + camW/2, y + camH/2, camW/2, 0, Math.PI*2);
         ctx.clip();
-        ctx.filter = 'none';
+        ctx.filter = 'none'; // 美颜由 CSS 控制
         ctx.drawImage(camVideo, x, y, camW, camH);
         ctx.restore();
       }
     }
 
     async function startRecording() {
-      // ✅ 严格检查 MP4 支持
       const mp4Supported = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1');
       if (!mp4Supported) {
-        statusEl.textContent = '❌ 当前浏览器不支持 MP4 录制！请使用 Chrome 或 Edge 浏览器。';
+        statusEl.textContent = '❌ 请使用 Chrome 或 Edge 浏览器录制 MP4。';
         return;
       }
 
       try {
-        statusEl.textContent = '正在请求屏幕共享...';
+        statusEl.textContent = '请选择要录制的窗口...';
         recordBtn.disabled = true;
 
+        // 关键：等待用户选择，但绝不显示 preview
         screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: "motion" },
           audio: true
@@ -333,13 +342,12 @@
 
         if (isAvatarOn) await getCamera();
 
+        // ✅ 仅设置流，不显示
         preview.srcObject = screenStream;
-        preview.style.display = 'block';
+
         initCropOverlay();
 
-        // ✅ 强制使用 MP4 H.264
         const mimeType = 'video/mp4;codecs=avc1';
-
         const captureStream = canvas.captureStream(30);
         mediaRecorder = new MediaRecorder(captureStream, { mimeType });
         recordedChunks = [];
@@ -385,7 +393,6 @@
       [screenStream, cameraStream].forEach(s => s?.getTracks().forEach(t => t.stop()));
       preview.srcObject = null;
       pipVideo.srcObject = null;
-      preview.style.display = 'none';
       cropOverlay.style.display = 'none';
       pipContainer.style.display = 'none';
       recordBtn.style.display = 'inline-block';
