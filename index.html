@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Loom Pro Ultimate</title>
+  <title>Loom Pro Ultimate - MP4 Only</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body {
@@ -43,7 +43,7 @@
     #stopBtn { background: #64748b; display: none; }
     .status {
       margin: 10px 0;
-      color: #94a3b8;
+      color: #f87171;
       font-size: 13px;
       text-align: center;
     }
@@ -81,7 +81,6 @@
       border-radius: 50%;
       box-shadow: 0 2px 8px rgba(0,0,0,0.4);
       display: block;
-      /* 初始无滤镜，由 JS 控制 */
       filter: none;
     }
     #sizeControls {
@@ -103,7 +102,7 @@
   </style>
 </head>
 <body>
-  <h1>🎬 Loom Pro Ultimate（美颜仅用于头像）</h1>
+  <h1>🎬 Loom Pro Ultimate（仅输出 MP4｜美颜仅用于头像）</h1>
 
   <div class="controls">
     <select id="aspect">
@@ -166,7 +165,6 @@
     const sizes = { small: 80, medium: 120, large: 160 };
     let cropRect = { x: 0, y: 0, width: 800, height: 450 };
 
-    // 更新头像滤镜
     function updatePipFilter() {
       pipVideo.style.filter = isBeautyOn 
         ? 'brightness(1.35) contrast(1.25) saturate(1.15)'
@@ -211,7 +209,7 @@
         });
         pipVideo.srcObject = cameraStream;
         pipContainer.style.display = isAvatarOn ? 'block' : 'none';
-        updatePipFilter(); // 初始化滤镜
+        updatePipFilter();
         positionPip();
       } catch (err) {
         console.warn('摄像头不可用:', err);
@@ -294,11 +292,9 @@
       const offsetX = (srcWidth - zoomedWidth) / 2;
       const offsetY = (srcHeight - zoomedHeight) / 2;
 
-      // ✅ 主画面：永远无美颜！
       ctx.filter = 'none';
       ctx.drawImage(video, offsetX, offsetY, zoomedWidth, zoomedHeight, 0, 0, canvas.width, canvas.height);
 
-      // 绘制头像（圆形裁剪）
       if (isAvatarOn && camVideo && camVideo.readyState >= 2) {
         const size = sizes[currentSize];
         const scale = canvas.width / window.innerWidth;
@@ -312,13 +308,20 @@
         ctx.beginPath();
         ctx.arc(x + camW/2, y + camH/2, camW/2, 0, Math.PI*2);
         ctx.clip();
-        ctx.filter = 'none'; // 滤镜已在 CSS 中处理
+        ctx.filter = 'none';
         ctx.drawImage(camVideo, x, y, camW, camH);
         ctx.restore();
       }
     }
 
     async function startRecording() {
+      // ✅ 严格检查 MP4 支持
+      const mp4Supported = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1');
+      if (!mp4Supported) {
+        statusEl.textContent = '❌ 当前浏览器不支持 MP4 录制！请使用 Chrome 或 Edge 浏览器。';
+        return;
+      }
+
       try {
         statusEl.textContent = '正在请求屏幕共享...';
         recordBtn.disabled = true;
@@ -334,25 +337,23 @@
         preview.style.display = 'block';
         initCropOverlay();
 
-        const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264') 
-          ? 'video/mp4;codecs=h264' 
-          : 'video/webm;codecs=vp9';
+        // ✅ 强制使用 MP4 H.264
+        const mimeType = 'video/mp4;codecs=avc1';
 
         const captureStream = canvas.captureStream(30);
         mediaRecorder = new MediaRecorder(captureStream, { mimeType });
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
-          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
           const blob = new Blob(recordedChunks, { type: mimeType });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `LoomPro_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.${ext}`;
+          a.download = `LoomPro_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.mp4`;
           a.click();
           URL.revokeObjectURL(url);
           cleanup();
-          statusEl.textContent = `✅ 视频已保存为 ${ext.toUpperCase()}！`;
+          statusEl.textContent = '✅ MP4 视频已保存！';
         };
         mediaRecorder.start();
 
@@ -364,7 +365,7 @@
 
         recordBtn.style.display = 'none';
         stopBtn.style.display = 'inline-block';
-        statusEl.textContent = '🎬 自动运镜录制中... 点击【停止】保存';
+        statusEl.textContent = '🎬 MP4 录制中... 点击【停止】保存';
 
       } catch (err) {
         console.error(err);
@@ -398,7 +399,7 @@
     beautyToggle.addEventListener('click', () => {
       isBeautyOn = !isBeautyOn;
       beautyToggle.textContent = `💡 美颜: ${isBeautyOn ? '开' : '关'}`;
-      updatePipFilter(); // 切换时立即生效
+      updatePipFilter();
     });
     avatarToggle.addEventListener('click', () => {
       isAvatarOn = !isAvatarOn;
@@ -413,7 +414,6 @@
       currentSize = 'large'; updatePipSize();
     });
 
-    // 初始化
     updatePipFilter();
     positionPip();
   </script>
