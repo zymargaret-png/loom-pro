@@ -38,7 +38,6 @@
       color: white;
       cursor: pointer;
     }
-    button.active { background: #334155; }
     #recordBtn { background: #ef4444; }
     #stopBtn { background: #64748b; display: none; }
     .status {
@@ -52,25 +51,18 @@
       width: 100%;
       max-width: 800px;
       margin: 10px 0;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      height: 450px;
       background: #1e293b;
+      border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 450px;
       color: #64748b;
-    }
-    /* 隐藏实际视频流 */
-    #preview {
-      display: none;
+      font-size: 14px;
     }
     #cropOverlay {
       position: absolute;
       border: 2px dashed rgba(255,255,255,0.5);
-      background: transparent;
-      cursor: move;
       display: none;
     }
     #pipContainer {
@@ -86,7 +78,6 @@
       object-fit: cover;
       border-radius: 50%;
       box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-      display: block;
       filter: none;
     }
     #sizeControls {
@@ -103,8 +94,12 @@
       padding: 0;
       font-size: 12px;
       border-radius: 50%;
+      background: #334155;
+      color: white;
     }
     canvas { display: none; }
+    /* 关键：隐藏 preview 视频，但保留元素 */
+    #preview { display: none; }
   </style>
 </head>
 <body>
@@ -117,7 +112,6 @@
       <option value="3:4">3:4 (小红书)</option>
       <option value="1:1">1:1 (方形)</option>
     </select>
-    
     <button id="beautyToggle">💡 美颜: 开</button>
     <button id="avatarToggle">👤 头像: 开</button>
     <button id="resetPosition">🔄 回中</button>
@@ -130,7 +124,6 @@
 
   <div class="status" id="status">点击【录制MP4】启动系统...</div>
 
-  <!-- 预览容器仅用于显示裁切框，不显示真实视频 -->
   <div id="previewContainer">
     <div>📹 录制区域预览（实际内容不可见）</div>
     <div id="cropOverlay"></div>
@@ -144,12 +137,14 @@
     </div>
   </div>
 
+  <!-- ⚠️ 必须保留！即使 display:none -->
+  <video id="preview" autoplay muted playsinline></video>
   <canvas id="filterCanvas"></canvas>
 
   <script>
     const recordBtn = document.getElementById('recordBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const preview = document.getElementById('preview'); // 实际视频流（隐藏）
+    const preview = document.getElementById('preview'); // ← 现在不会是 null
     const cropOverlay = document.getElementById('cropOverlay');
     const pipContainer = document.getElementById('pipContainer');
     const pipVideo = document.getElementById('pipVideo');
@@ -161,6 +156,10 @@
     const canvas = document.getElementById('filterCanvas');
     const ctx = canvas.getContext('2d');
 
+    if (!preview) {
+      alert('❌ 页面缺少 <video id="preview"> 元素，请勿删除它！');
+    }
+
     let screenStream = null;
     let cameraStream = null;
     let mediaRecorder = null;
@@ -170,7 +169,6 @@
     let isAvatarOn = true;
     let currentSize = 'medium';
     const sizes = { small: 80, medium: 120, large: 160 };
-    let cropRect = { x: 0, y: 0, width: 800, height: 450 };
 
     function updatePipFilter() {
       pipVideo.style.filter = isBeautyOn 
@@ -190,28 +188,20 @@
       const overlayWidth = w * 60 * scale;
       const overlayHeight = h * 60 * scale;
 
-      cropRect = {
-        x: (containerWidth - overlayWidth) / 2,
-        y: (containerHeight - overlayHeight) / 2,
-        width: overlayWidth,
-        height: overlayHeight
-      };
+      const x = (containerWidth - overlayWidth) / 2;
+      const y = (containerHeight - overlayHeight) / 2;
 
       cropOverlay.style.display = 'block';
-      cropOverlay.style.left = cropRect.x + 'px';
-      cropOverlay.style.top = cropRect.y + 'px';
-      cropOverlay.style.width = cropRect.width + 'px';
-      cropOverlay.style.height = cropRect.height + 'px';
+      cropOverlay.style.left = x + 'px';
+      cropOverlay.style.top = y + 'px';
+      cropOverlay.style.width = overlayWidth + 'px';
+      cropOverlay.style.height = overlayHeight + 'px';
     }
 
     async function getCamera() {
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user'
-          },
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
           audio: false
         });
         pipVideo.srcObject = cameraStream;
@@ -229,59 +219,58 @@
       const size = sizes[currentSize];
       pipContainer.style.left = (window.innerWidth - size - 20) + 'px';
       pipContainer.style.top = (window.innerHeight - size - 80) + 'px';
-      updatePipSize();
-    }
-
-    function updatePipSize() {
-      const size = sizes[currentSize];
       pipContainer.style.width = size + 'px';
       pipContainer.style.height = size + 'px';
     }
 
-    let isDraggingPip = false, pipOffsetX, pipOffsetY;
+    let isDraggingPip = false;
     pipContainer.addEventListener('mousedown', (e) => {
       if (['smallSize', 'largeSize'].includes(e.target.id)) return;
       isDraggingPip = true;
       const rect = pipContainer.getBoundingClientRect();
-      pipOffsetX = e.clientX - rect.left;
-      pipOffsetY = e.clientY - rect.top;
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+      document.addEventListener('mousemove', movePip);
+      document.addEventListener('mouseup', () => {
+        document.removeEventListener('mousemove', movePip);
+        isDraggingPip = false;
+      });
+
+      function movePip(e) {
+        let x = e.clientX - offsetX;
+        let y = e.clientY - offsetY;
+        x = Math.max(0, Math.min(x, window.innerWidth - pipContainer.offsetWidth));
+        y = Math.max(0, Math.min(y, window.innerHeight - pipContainer.offsetHeight));
+        pipContainer.style.left = x + 'px';
+        pipContainer.style.top = y + 'px';
+      }
     });
 
-    document.addEventListener('mousemove', (e) => {
-      if (!isDraggingPip) return;
-      let x = e.clientX - pipOffsetX;
-      let y = e.clientY - pipOffsetY;
-      x = Math.max(0, Math.min(x, window.innerWidth - pipContainer.offsetWidth));
-      y = Math.max(0, Math.min(y, window.innerHeight - pipContainer.offsetHeight));
-      pipContainer.style.left = x + 'px';
-      pipContainer.style.top = y + 'px';
-    });
-
-    document.addEventListener('mouseup', () => isDraggingPip = false);
-
-    let isDraggingCrop = false, cropStartX, cropStartY;
+    let isDraggingCrop = false;
     cropOverlay.addEventListener('mousedown', (e) => {
       isDraggingCrop = true;
-      cropStartX = e.clientX - cropRect.x;
-      cropStartY = e.clientY - cropRect.y;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-      if (!isDraggingCrop) return;
-      cropRect.x = e.clientX - cropStartX;
-      cropRect.y = e.clientY - cropStartY;
       const container = document.getElementById('previewContainer');
-      cropRect.x = Math.max(0, Math.min(cropRect.x, container.clientWidth - cropRect.width));
-      cropRect.y = Math.max(0, Math.min(cropRect.y, container.clientHeight - cropRect.height));
-      cropOverlay.style.left = cropRect.x + 'px';
-      cropOverlay.style.top = cropRect.y + 'px';
-    });
+      const startX = e.clientX - parseFloat(cropOverlay.style.left);
+      const startY = e.clientY - parseFloat(cropOverlay.style.top);
+      document.addEventListener('mousemove', moveCrop);
+      document.addEventListener('mouseup', () => {
+        document.removeEventListener('mousemove', moveCrop);
+        isDraggingCrop = false;
+      });
 
-    document.addEventListener('mouseup', () => isDraggingCrop = false);
+      function moveCrop(e) {
+        let x = e.clientX - startX;
+        let y = e.clientY - startY;
+        x = Math.max(0, Math.min(x, container.clientWidth - cropOverlay.offsetWidth));
+        y = Math.max(0, Math.min(y, container.clientHeight - cropOverlay.offsetHeight));
+        cropOverlay.style.left = x + 'px';
+        cropOverlay.style.top = y + 'px';
+      }
+    });
 
     let zoomLevel = 1.0;
     let zoomDirection = 0.0005;
-    function applyCinematicZoom(video, camVideo) {
+    function applyCinematicZoom() {
       const ratio = aspectSelect.value;
       let [w, h] = ratio.split(':').map(Number);
       if (!w || !h) { w = 16; h = 9; }
@@ -292,19 +281,17 @@
       zoomLevel += zoomDirection;
       if (zoomLevel > 1.1 || zoomLevel < 1.0) zoomDirection *= -1;
 
-      const srcWidth = video.videoWidth;
-      const srcHeight = video.videoHeight;
-      const zoomedWidth = srcWidth / zoomLevel;
-      const zoomedHeight = srcHeight / zoomLevel;
-      const offsetX = (srcWidth - zoomedWidth) / 2;
-      const offsetY = (srcHeight - zoomedHeight) / 2;
+      if (preview.readyState >= 2) {
+        const srcW = preview.videoWidth;
+        const srcH = preview.videoHeight;
+        const zoomedW = srcW / zoomLevel;
+        const zoomedH = srcH / zoomLevel;
+        const offsetX = (srcW - zoomedW) / 2;
+        const offsetY = (srcH - zoomedH) / 2;
+        ctx.drawImage(preview, offsetX, offsetY, zoomedW, zoomedH, 0, 0, canvas.width, canvas.height);
+      }
 
-      // 主画面：无滤镜
-      ctx.filter = 'none';
-      ctx.drawImage(video, offsetX, offsetY, zoomedWidth, zoomedHeight, 0, 0, canvas.width, canvas.height);
-
-      // 绘制圆形头像（带美颜）
-      if (isAvatarOn && camVideo && camVideo.readyState >= 2) {
+      if (isAvatarOn && pipVideo.readyState >= 2) {
         const size = sizes[currentSize];
         const scale = canvas.width / window.innerWidth;
         const camW = size * scale;
@@ -317,15 +304,13 @@
         ctx.beginPath();
         ctx.arc(x + camW/2, y + camH/2, camW/2, 0, Math.PI*2);
         ctx.clip();
-        ctx.filter = 'none'; // 美颜由 CSS 控制
-        ctx.drawImage(camVideo, x, y, camW, camH);
+        ctx.drawImage(pipVideo, x, y, camW, camH);
         ctx.restore();
       }
     }
 
     async function startRecording() {
-      const mp4Supported = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1');
-      if (!mp4Supported) {
+      if (!MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) {
         statusEl.textContent = '❌ 请使用 Chrome 或 Edge 浏览器录制 MP4。';
         return;
       }
@@ -334,7 +319,6 @@
         statusEl.textContent = '请选择要录制的窗口...';
         recordBtn.disabled = true;
 
-        // 关键：等待用户选择，但绝不显示 preview
         screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: "motion" },
           audio: true
@@ -342,7 +326,7 @@
 
         if (isAvatarOn) await getCamera();
 
-        // ✅ 仅设置流，不显示
+        // ✅ 关键：设置 srcObject 到隐藏的 preview
         preview.srcObject = screenStream;
 
         initCropOverlay();
@@ -357,7 +341,7 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `LoomPro_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.mp4`;
+          a.download = `LoomPro_${new Date().toISOString().replace(/:/g,'-').replace('T','_').slice(0,19)}.mp4`;
           a.click();
           URL.revokeObjectURL(url);
           cleanup();
@@ -366,7 +350,7 @@
         mediaRecorder.start();
 
         function animate() {
-          applyCinematicZoom(preview, pipVideo);
+          applyCinematicZoom();
           animationFrameId = requestAnimationFrame(animate);
         }
         animate();
@@ -383,7 +367,7 @@
     }
 
     function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      if (mediaRecorder?.state !== 'inactive') {
         mediaRecorder.stop();
         cancelAnimationFrame(animationFrameId);
       }
@@ -415,10 +399,10 @@
     });
     resetBtn.addEventListener('click', positionPip);
     document.getElementById('smallSize').addEventListener('click', () => {
-      currentSize = 'small'; updatePipSize();
+      currentSize = 'small'; positionPip();
     });
     document.getElementById('largeSize').addEventListener('click', () => {
-      currentSize = 'large'; updatePipSize();
+      currentSize = 'large'; positionPip();
     });
 
     updatePipFilter();
