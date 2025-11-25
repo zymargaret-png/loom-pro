@@ -98,7 +98,7 @@
       color: white;
     }
     canvas { display: none; }
-    /* 关键：隐藏 preview 视频，但保留元素 */
+    /* 隐藏 preview，但必须存在 */
     #preview { display: none; }
   </style>
 </head>
@@ -137,14 +137,16 @@
     </div>
   </div>
 
-  <!-- ⚠️ 必须保留！即使 display:none -->
+  <!-- ⚠️ 必须存在，且位于 script 之前 -->
   <video id="preview" autoplay muted playsinline></video>
   <canvas id="filterCanvas"></canvas>
 
+  <!-- ✅ 脚本放在所有 DOM 之后 -->
   <script>
+    // 现在可以安全获取所有元素
     const recordBtn = document.getElementById('recordBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const preview = document.getElementById('preview'); // ← 现在不会是 null
+    const preview = document.getElementById('preview'); // 不会是 null
     const cropOverlay = document.getElementById('cropOverlay');
     const pipContainer = document.getElementById('pipContainer');
     const pipVideo = document.getElementById('pipVideo');
@@ -155,10 +157,6 @@
     const resetBtn = document.getElementById('resetPosition');
     const canvas = document.getElementById('filterCanvas');
     const ctx = canvas.getContext('2d');
-
-    if (!preview) {
-      alert('❌ 页面缺少 <video id="preview"> 元素，请勿删除它！');
-    }
 
     let screenStream = null;
     let cameraStream = null;
@@ -230,42 +228,44 @@
       const rect = pipContainer.getBoundingClientRect();
       const offsetX = e.clientX - rect.left;
       const offsetY = e.clientY - rect.top;
-      document.addEventListener('mousemove', movePip);
-      document.addEventListener('mouseup', () => {
-        document.removeEventListener('mousemove', movePip);
-        isDraggingPip = false;
-      });
-
-      function movePip(e) {
+      const moveHandler = (e) => {
         let x = e.clientX - offsetX;
         let y = e.clientY - offsetY;
         x = Math.max(0, Math.min(x, window.innerWidth - pipContainer.offsetWidth));
         y = Math.max(0, Math.min(y, window.innerHeight - pipContainer.offsetHeight));
         pipContainer.style.left = x + 'px';
         pipContainer.style.top = y + 'px';
-      }
+      };
+      const upHandler = () => {
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        isDraggingPip = false;
+      };
+      document.addEventListener('mousemove', moveHandler);
+      document.addEventListener('mouseup', upHandler);
     });
 
     let isDraggingCrop = false;
     cropOverlay.addEventListener('mousedown', (e) => {
       isDraggingCrop = true;
       const container = document.getElementById('previewContainer');
-      const startX = e.clientX - parseFloat(cropOverlay.style.left);
-      const startY = e.clientY - parseFloat(cropOverlay.style.top);
-      document.addEventListener('mousemove', moveCrop);
-      document.addEventListener('mouseup', () => {
-        document.removeEventListener('mousemove', moveCrop);
-        isDraggingCrop = false;
-      });
-
-      function moveCrop(e) {
+      const startX = e.clientX - parseFloat(cropOverlay.style.left || 0);
+      const startY = e.clientY - parseFloat(cropOverlay.style.top || 0);
+      const moveHandler = (e) => {
         let x = e.clientX - startX;
         let y = e.clientY - startY;
         x = Math.max(0, Math.min(x, container.clientWidth - cropOverlay.offsetWidth));
         y = Math.max(0, Math.min(y, container.clientHeight - cropOverlay.offsetHeight));
         cropOverlay.style.left = x + 'px';
         cropOverlay.style.top = y + 'px';
-      }
+      };
+      const upHandler = () => {
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        isDraggingCrop = false;
+      };
+      document.addEventListener('mousemove', moveHandler);
+      document.addEventListener('mouseup', upHandler);
     });
 
     let zoomLevel = 1.0;
@@ -326,7 +326,7 @@
 
         if (isAvatarOn) await getCamera();
 
-        // ✅ 关键：设置 srcObject 到隐藏的 preview
+        // ✅ 现在 preview 一定存在
         preview.srcObject = screenStream;
 
         initCropOverlay();
